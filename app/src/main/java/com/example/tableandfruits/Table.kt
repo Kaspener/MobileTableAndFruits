@@ -14,6 +14,7 @@ class Table(private val context: Context) {
     private lateinit var vertexBuffer: FloatBuffer
     private lateinit var texCoordBuffer: FloatBuffer
     private lateinit var indexBuffer: ShortBuffer
+    private lateinit var normalBuffer: FloatBuffer
 
     private var textureId: Int = 0
 
@@ -68,6 +69,17 @@ class Table(private val context: Context) {
         1.4f, -1f, -1.6f,    // 37: нижняя задняя левая (дополнительная точка для отрисовки куба)
         1.2f, -1f, -1.6f,    // 38: нижняя задняя правая (дополнительная точка для отрисовки куба)
         1.2f, 0f, -1.6f      // 39: верхняя задняя правая (дополнительная точка для отрисовки куба)
+    )
+
+    private val normals = floatArrayOf(
+        0f, 1f, 0f,  // Нормаль для вершины 0
+        0f, 1f, 0f,  // Нормаль для вершины 1
+        0f, 1f, 0f,  // Нормаль для вершины 2
+        0f, 1f, 0f,  // Нормаль для вершины 3
+        0f, -1f, 0f, // Нормаль для вершины 4
+        0f, -1f, 0f, // Нормаль для вершины 5
+        0f, -1f, 0f, // Нормаль для вершины 6
+        0f, -1f, 0f  // Нормаль для вершины 7
     )
 
     // Текстурные координаты
@@ -143,6 +155,14 @@ class Table(private val context: Context) {
             }
         }
 
+        normalBuffer = ByteBuffer.allocateDirect(normals.size * 4).run {
+            order(ByteOrder.nativeOrder())
+            asFloatBuffer().apply {
+                put(normals)
+                position(0)
+            }
+        }
+
         indexBuffer = ByteBuffer.allocateDirect(indices.size * 2).run {
             order(ByteOrder.nativeOrder())
             asShortBuffer().apply {
@@ -172,71 +192,92 @@ class Table(private val context: Context) {
         return textureId
     }
 
-    fun draw(mvpMatrix: FloatArray) {
+    fun draw(mvpMatrix: FloatArray, modelMatrix: FloatArray, lightPosition: FloatArray, viewPosition: FloatArray) {
         shaderProgram.use()
 
         val positionHandle = GLES20.glGetAttribLocation(shaderProgram.programId, "aPosition")
         val texCoordHandle = GLES20.glGetAttribLocation(shaderProgram.programId, "aTexCoord")
+        val normalHandle = GLES20.glGetAttribLocation(shaderProgram.programId, "aNormal")
         val mvpMatrixHandle = GLES20.glGetUniformLocation(shaderProgram.programId, "uMVPMatrix")
+        val modelMatrixHandle = GLES20.glGetUniformLocation(shaderProgram.programId, "uModelMatrix")
         val textureHandle = GLES20.glGetUniformLocation(shaderProgram.programId, "uTexture")
+        val lightPositionHandle = GLES20.glGetUniformLocation(shaderProgram.programId, "uLightPosition")
+        val viewPositionHandle = GLES20.glGetUniformLocation(shaderProgram.programId, "uViewPosition")
 
         GLES20.glUniformMatrix4fv(mvpMatrixHandle, 1, false, mvpMatrix, 0)
+        GLES20.glUniformMatrix4fv(modelMatrixHandle, 1, false, modelMatrix, 0)
+        GLES20.glUniform3fv(lightPositionHandle, 1, lightPosition, 0)
+        GLES20.glUniform3fv(viewPositionHandle, 1, viewPosition, 0)
+
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, textureId)
         GLES20.glUniform1i(textureHandle, 0)
 
         GLES20.glEnableVertexAttribArray(positionHandle)
         GLES20.glEnableVertexAttribArray(texCoordHandle)
+        GLES20.glEnableVertexAttribArray(normalHandle)
 
         vertexBuffer.position(0)
-        GLES20.glVertexAttribPointer(
-            positionHandle,
-            3,
-            GLES20.GL_FLOAT,
-            false,
-            3 * 4,
-            vertexBuffer
-        )
+        GLES20.glVertexAttribPointer(positionHandle, 3, GLES20.GL_FLOAT, false, 3 * 4, vertexBuffer)
 
         texCoordBuffer.position(0)
-        GLES20.glVertexAttribPointer(
-            texCoordHandle,
-            2,
-            GLES20.GL_FLOAT,
-            false,
-            2 * 4,
-            texCoordBuffer
-        )
+        GLES20.glVertexAttribPointer(texCoordHandle, 2, GLES20.GL_FLOAT, false, 2 * 4, texCoordBuffer)
 
-        GLES20.glDrawElements(
-            GLES20.GL_TRIANGLES,
-            indices.size,
-            GLES20.GL_UNSIGNED_SHORT,
-            indexBuffer
-        )
+        normalBuffer.position(0)
+        GLES20.glVertexAttribPointer(normalHandle, 3, GLES20.GL_FLOAT, false, 3 * 4, normalBuffer)
+
+        GLES20.glDrawElements(GLES20.GL_TRIANGLES, indices.size, GLES20.GL_UNSIGNED_SHORT, indexBuffer)
 
         GLES20.glDisableVertexAttribArray(positionHandle)
         GLES20.glDisableVertexAttribArray(texCoordHandle)
+        GLES20.glDisableVertexAttribArray(normalHandle)
     }
 
     companion object {
         private val VERTEX_SHADER_CODE = """
         attribute vec4 aPosition;
         attribute vec2 aTexCoord;
+        attribute vec3 aNormal;
+
         uniform mat4 uMVPMatrix;
+        uniform mat4 uModelMatrix;
+        uniform vec3 uLightPosition;
+        uniform vec3 uViewPosition;
+
         varying vec2 vTexCoord;
+        varying vec3 vNormal;
+        varying vec3 vFragPosition;
+
         void main() {
             vTexCoord = aTexCoord;
+            vNormal = mat3(uModelMatrix) * aNormal;
+            vFragPosition = vec3(uModelMatrix * aPosition);
             gl_Position = uMVPMatrix * aPosition;
         }
         """.trimIndent()
 
         private val FRAGMENT_SHADER_CODE = """
         precision mediump float;
+
         uniform sampler2D uTexture;
+        uniform vec3 uLightPosition;
+        uniform vec3 uViewPosition;
+
         varying vec2 vTexCoord;
+        varying vec3 vNormal;
+        varying vec3 vFragPosition;
+
         void main() {
-            gl_FragColor = texture2D(uTexture, vTexCoord);
+            vec3 norm = normalize(vNormal);
+            vec3 lightDir = normalize(uLightPosition - vFragPosition);
+            vec3 viewDir = normalize(uViewPosition - vFragPosition);
+
+            // Фонговское освещение
+            float diff = max(dot(norm, lightDir), 0.0);
+            vec3 diffuse = vec3(diff);
+
+            vec3 result = diffuse * texture2D(uTexture, vTexCoord).rgb;
+            gl_FragColor = vec4(result, 1.0);
         }
         """.trimIndent()
     }

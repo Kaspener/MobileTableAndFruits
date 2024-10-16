@@ -35,7 +35,7 @@ class Renderer(private val context: Context) : GLSurfaceView.Renderer {
     private var candleFireTexture: Int = 0
 
     override fun onSurfaceCreated(arg0: GL10?, arg1: EGLConfig?) {
-        GLES20.glClearColor(0.98f, 0.93f, 0.8f, 0.0f)
+        GLES20.glClearColor(0.15f, 0.243f, 0.36f, 0.0f)
         GLES20.glEnable(GLES20.GL_DEPTH_TEST)
         GLES20.glDepthFunc(GLES20.GL_LESS)
 
@@ -73,7 +73,7 @@ class Renderer(private val context: Context) : GLSurfaceView.Renderer {
         Matrix.rotateM(modelMatrix, 0, 15f, 0.1f, 0.1f, 0f)
         Matrix.multiplyMM(mVPMatrix, 0, projectionMatrix, 0, viewMatrix, 0)
         Matrix.multiplyMM(mVPMatrix, 0, mVPMatrix, 0, modelMatrix, 0)
-        table.draw(mVPMatrix)
+        table.draw(mVPMatrix, modelMatrix, lightPos, viewMatrix)
 
         Matrix.setIdentityM(modelMatrix, 0)
         //Matrix.setLookAtM(viewMatrix, 0, 0f, 0f, 5f, 0f, 0f, 0f, 0f, 1f, 0f)
